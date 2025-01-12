@@ -1,101 +1,105 @@
-const tap = require('tap');
-const supertest = require('supertest');
-const app = require('../app');
-const server = supertest(app);
+const request = require("supertest");
+const app = require("../app");
+const jwt = require("jsonwebtoken");
+
+let token;
 
 const mockUser = {
-    name: 'Clark Kent',
-    email: 'clark@superman.com',
-    password: 'Krypt()n8',
-    preferences:['movies', 'comics']
+  email: "test@example.com",
+  password: "password123",
+  preferences: {
+    categories: ["technology"],
+    languages: ["en"],
+    theme: "dark",
+  },
 };
 
-let token = '';
+describe("Authentication Routes", () => {
+  test("POST /auth/register - Successful registration", async () => {
+    const response = await request(app)
+      .post("/auth/register")
+      .send(mockUser);
 
-// Auth tests
+    expect(response.status).toBe(201);
+    expect(response.body.message).toBe("User registered");
+  });
 
-tap.test('POST /users/signup', async (t) => { 
-    const response = await server.post('/users/signup').send(mockUser);
-    t.equal(response.status, 200);
-    t.end();
-});
+  test("POST /auth/register - Email already registered", async () => {
+    const response = await request(app)
+      .post("/auth/register")
+      .send(mockUser);
 
-tap.test('POST /users/signup with missing email', async (t) => {
-    const response = await server.post('/users/signup').send({
-        name: mockUser.name,
-        password: mockUser.password
-    });
-    t.equal(response.status, 400);
-    t.end();
-});
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe("Email already registered");
+  });
 
-tap.test('POST /users/login', async (t) => { 
-    const response = await server.post('/users/login').send({
+  test("POST /auth/login - Successful login", async () => {
+    const response = await request(app)
+      .post("/auth/login")
+      .send({
         email: mockUser.email,
-        password: mockUser.password
-    });
-    t.equal(response.status, 200);
-    t.hasOwnProp(response.body, 'token');
+        password: mockUser.password,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.token).toBeDefined();
+
     token = response.body.token;
-    t.end();
-});
+  });
 
-tap.test('POST /users/login with wrong password', async (t) => {
-    const response = await server.post('/users/login').send({
+  test("POST /auth/login - Invalid credentials", async () => {
+    const response = await request(app)
+      .post("/auth/login")
+      .send({
         email: mockUser.email,
-        password: 'wrongpassword'
-    });
-    t.equal(response.status, 401);
-    t.end();
+        password: "wrongpassword",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe("Invalid credentials");
+  });
 });
 
-// Preferences tests
+describe("Preferences Routes", () => {
+  test("GET /preferences - Fetch user preferences", async () => {
+    const response = await request(app)
+      .get("/preferences")
+      .set("Authorization", `Bearer ${token}`);
 
-tap.test('GET /users/preferences', async (t) => {
-    const response = await server.get('/users/preferences').set('Authorization', `Bearer ${token}`);
-    t.equal(response.status, 200);
-    t.hasOwnProp(response.body, 'preferences');
-    t.same(response.body.preferences, mockUser.preferences);
-    t.end();
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject(mockUser.preferences);
+  });
+
+  test("PUT /preferences - Update user preferences", async () => {
+    const newPreferences = {
+      categories: ["science"],
+      languages: ["fr"],
+    };
+
+    const response = await request(app)
+      .put("/preferences")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ preferences: newPreferences });
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe("Preferences updated");
+  });
 });
 
-tap.test('GET /users/preferences without token', async (t) => {
-    const response = await server.get('/users/preferences');
-    t.equal(response.status, 401);
-    t.end();
-});
+describe("News Routes", () => {
+  test("GET /news - Fetch news with preferences", async () => {
+    const response = await request(app)
+      .get("/news")
+      .set("Authorization", `Bearer ${token}`);
 
-tap.test('PUT /users/preferences', async (t) => {
-    const response = await server.put('/users/preferences').set('Authorization', `Bearer ${token}`).send({
-        preferences: ['movies', 'comics', 'games']
-    });
-    t.equal(response.status, 200);
-});
+    expect(response.status).toBe(200);
+    expect(response.body).toBeInstanceOf(Array);
+  });
 
-tap.test('Check PUT /users/preferences', async (t) => {
-    const response = await server.get('/users/preferences').set('Authorization', `Bearer ${token}`);
-    t.equal(response.status, 200);
-    t.same(response.body.preferences, ['movies', 'comics', 'games']);
-    t.end();
-});
+  test("GET /news - Unauthorized without token", async () => {
+    const response = await request(app).get("/news");
 
-// News tests
-
-tap.test('GET /news', async (t) => {
-    const response = await server.get('/news').set('Authorization', `Bearer ${token}`);
-    t.equal(response.status, 200);
-    t.hasOwnProp(response.body, 'news');
-    t.end();
-});
-
-tap.test('GET /news without token', async (t) => {
-    const response = await server.get('/news');
-    t.equal(response.status, 401);
-    t.end();
-});
-
-
-
-tap.teardown(() => {
-    process.exit(0);
+    expect(response.status).toBe(401);
+    expect(response.body.message).toBe("Unauthorized");
+  });
 });
